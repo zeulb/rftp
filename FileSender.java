@@ -15,6 +15,8 @@ public class FileSender {
   private static int STRING_SIZE   = 256;
   private static int HEADER_SIZE   = 8;
   private static int CHECKSUM_SIZE = 8;
+  private static int CONTENT_WITH_NAME_SIZE  = BLOCK_SIZE - CHECKSUM_SIZE - HEADER_SIZE;
+  private static int CONTENT_SIZE = BLOCK_SIZE - CHECKSUM_SIZE - HEADER_SIZE - STRING_SIZE;
 
   public static void main(String args[]) throws Exception {
      
@@ -32,10 +34,25 @@ public class FileSender {
 
     BufferedReader sourceFileReader = new BufferedReader(new FileReader(sourceFileLocation));
 
-    byte[] data = new byte[BLOCK_SIZE];
+    byte[] dataByte = new byte[BLOCK_SIZE];
+    char[] dataChar = new char[BLOCK_SIZE];    
 
     int sequenceNumber = 0;
 
+    while(true) {
+      int length = 0;
+      if (sequenceNumber == 0) {
+        length = sourceFileReader.read(dataChar, CHECKSUM_SIZE + HEADER_SIZE
+                                      + BLOCK_SIZE, CONTENT_SIZE);
+
+      }
+      else {
+        length = sourceFileReader.read(dataChar, CHECKSUM_SIZE + HEADER_SIZE
+                                      + BLOCK_SIZE + STRING_SIZE, CONTENT_WITH_NAME_SIZE);
+      }
+
+    
+    }
 
   }
 }
