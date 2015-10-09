@@ -15,8 +15,8 @@ public class FileSender {
   private static int STRING_SIZE   = 256;
   private static int HEADER_SIZE   = 8;
   private static int CHECKSUM_SIZE = 8;
-  private static int CONTENT_WITH_NAME_SIZE  = BLOCK_SIZE - CHECKSUM_SIZE - HEADER_SIZE;
-  private static int CONTENT_SIZE = BLOCK_SIZE - CHECKSUM_SIZE - HEADER_SIZE - STRING_SIZE;
+  private static int CONTENT_WITH_NAME_SIZE  = BLOCK_SIZE - CHECKSUM_SIZE - HEADER_SIZE - STRING_SIZE;
+  private static int CONTENT_SIZE = BLOCK_SIZE - CHECKSUM_SIZE - HEADER_SIZE;
 
   public static void main(String args[]) throws Exception {
      
@@ -32,26 +32,60 @@ public class FileSender {
 
     InetSocketAddress address = new InetSocketAddress(hostName, portNumber);
 
-    BufferedReader sourceFileReader = new BufferedReader(new FileReader(sourceFileLocation));
+    InputStream sourceFileStream = new BufferedInputStream(new FileInputStream(sourceFileLocation));
 
-    byte[] dataByte = new byte[BLOCK_SIZE];
-    char[] dataChar = new char[BLOCK_SIZE];    
+    byte[] data = new byte[BLOCK_SIZE];
 
     int sequenceNumber = 0;
 
-    while(true) {
-      int length = 0;
-      if (sequenceNumber == 0) {
-        length = sourceFileReader.read(dataChar, CHECKSUM_SIZE + HEADER_SIZE
-                                      + BLOCK_SIZE, CONTENT_SIZE);
+    while(destinationFileLocation.length() < 256) {
+      destinationFileLocation += " ";
+    }
 
+    CRC32 crc = new CRC32();
+
+    while(true) {
+      int length;
+      if (sequenceNumber == 0) {
+        length = sourceFileStream.read(data, 0, CONTENT_WITH_NAME_SIZE);
       }
       else {
-        length = sourceFileReader.read(dataChar, CHECKSUM_SIZE + HEADER_SIZE
-                                      + BLOCK_SIZE + STRING_SIZE, CONTENT_WITH_NAME_SIZE);
+        length = sourceFileStream.read(data, 0, CONTENT_SIZE);
+      }
+      if (length == -1) break;
+
+      int totalLength = length;
+
+      if (sequenceNumber == 0) {
+        totalLength += STRING_SIZE;
       }
 
+      totalLength += CHECKSUM_SIZE + HEADER_SIZE;
+
+      ByteBuffer dataBuffer = ByteBuffer.allocate(totalLength);
+
+      // reserve space for checksum
+      dataBuffer.putLong(0);
+
+      dataBuffer.putLong(sequenceNumber);
+
+      // add destination file name
+      if (sequenceNumber == 0) {
+        dataBuffer.put(destinationFileLocation.getBytes());
+      }
     
+      dataBuffer.put(data, 0, length);
+
+
+      crc.reset();
+      crc.update(dataBuffer.array(), CHECKSUM_SIZE, totalLength-CHECKSUM_SIZE);
+      long chksum = crc.getValue();
+      dataBuffer.rewind();
+      dataBuffer.putLong(chksum);
+
+      
+
+      sequenceNumber++;
     }
 
   }
