@@ -4,3 +4,5 @@
 *.out
 *.py
 .DS_Store
+SimpleUDPReceiver.java
+SimpleUDPSender.java
