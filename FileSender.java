@@ -18,6 +18,7 @@ public class FileSender {
   private final int CHECKSUM_SIZE = 8;
   private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
+  private final int TIMEOUT = 30;
 
   InetSocketAddress receiverAddress;
   CRC32 crc;
@@ -27,6 +28,7 @@ public class FileSender {
     receiverAddress = new InetSocketAddress(hostName, portNumber);
     crc = new CRC32();
     socket = new DatagramSocket();
+    socket.setSoTimeout(TIMEOUT);
   }
 
   public String getNormalizedString(String fileName) {
@@ -37,18 +39,22 @@ public class FileSender {
     return sb.toString();
   }
 
-  private boolean receiveACK() throws Exception {
+  private int receiveACK() throws Exception {
     ByteBuffer dataBuffer = ByteBuffer.allocate(ACK_SIZE);
     DatagramPacket packet = new DatagramPacket(dataBuffer.array(), ACK_SIZE);
-    socket.receive(packet);
-
+    try {
+      socket.receive(packet);
+    } catch (Exception e) {
+      return -1;
+    }
     long checksum = dataBuffer.getLong();
     int sequenceNumber = dataBuffer.getInt();
 
     crc.reset();
     crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
-    System.out.println(sequenceNumber);
-    return (checksum == crc.getValue() && sequenceNumber != -1);
+    if (checksum == crc.getValue())
+      System.out.println("ACK " + sequenceNumber);
+    return (checksum == crc.getValue() ? sequenceNumber : -1);
   }
 
   public void sendPacket(int sequenceNumber, byte[] data, int length) throws Exception {
@@ -76,9 +82,10 @@ public class FileSender {
 
 
     do {
+      System.out.println("send " + sequenceNumber);
       DatagramPacket packet = new DatagramPacket(dataBuffer.array(), HEADER_SIZE + length, receiverAddress);
       socket.send(packet);
-    } while(!receiveACK());
+    } while(receiveACK() != sequenceNumber);
   }
 
   private void sendFile(String sourceFile, String destinationFile) throws Exception {

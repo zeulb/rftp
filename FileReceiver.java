@@ -34,6 +34,7 @@ public class FileReceiver {
   private final int CHECKSUM_SIZE = 8;
   private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
+  private final int TIMEOUT = 100;
 
   DatagramSocket socket;
   SocketAddress senderAddress;
@@ -67,6 +68,7 @@ public class FileReceiver {
     dataBuffer.putLong(crc.getValue());
 
     // send packet
+    System.out.println("send ACK " + sequenceNumber);
     DatagramPacket packet = new DatagramPacket(dataBuffer.array(), ACK_SIZE, senderAddress);
     socket.send(packet);
   }
@@ -78,10 +80,17 @@ public class FileReceiver {
     byte[] container = new byte[BLOCK_SIZE];
     ByteBuffer dataBuffer = ByteBuffer.wrap(data);
     int expectedNumber = 0;
+    int previousACK = -1;
 
     while(true) {
       dataBuffer.clear();
-      int packetLength = receivePacket(data);
+      int packetLength;
+      try {
+        packetLength = receivePacket(data);
+      } catch(Exception e) {
+        sendACK(previousACK);
+        continue;
+      }
 
       if (packetLength < CHECKSUM_SIZE) {
         throw new Exception("Packet too short");
@@ -94,7 +103,7 @@ public class FileReceiver {
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
       if (checksum == crc.getValue()) {
         int sequenceNumber = dataBuffer.getInt();
-
+        System.out.println("receive " + sequenceNumber + " " + expectedNumber);
         // if sequence number is expected
         if (sequenceNumber == expectedNumber) {
           expectedNumber++;
@@ -105,6 +114,7 @@ public class FileReceiver {
             String destinationFile = new String(container).trim();
             destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
             Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
+            socket.setSoTimeout(TIMEOUT);
           }
           else {
             dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
@@ -114,9 +124,11 @@ public class FileReceiver {
         }
 
         sendACK(sequenceNumber);
+        previousACK = sequenceNumber;
       }
       else {
         sendACK(-1);
+        previousACK = -1;
       }
     }
   }
