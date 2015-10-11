@@ -11,12 +11,13 @@ public class FileSender {
   private static final int POSITION_SOURCE_FILE_LOCATION = 2;
   private static final int POSITION_DESTINATION_FILE_LOCATION = 3;
 
-  private final int BLOCK_SIZE              = 576;
-  private final int STRING_SIZE             = 256;
-  private final int SEQUENCE_SIZE           = 4;
-  private final int CHECKSUM_SIZE           = 8;
-  private final int HEADER_SIZE             = SEQUENCE_SIZE + CHECKSUM_SIZE;
-  private final int CONTENT_SIZE            = BLOCK_SIZE    - HEADER_SIZE;
+  private final int BLOCK_SIZE    = 576;
+  private final int STRING_SIZE   = 256;
+  private final int SEQUENCE_SIZE = 4;
+  private final int ACK_SIZE      = 12;
+  private final int CHECKSUM_SIZE = 8;
+  private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
+  private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
 
   InetSocketAddress receiverAddress;
   CRC32 crc;
@@ -34,6 +35,20 @@ public class FileSender {
       sb.append(' ');
     }
     return sb.toString();
+  }
+
+  private boolean receiveACK() throws Exception {
+    ByteBuffer dataBuffer = ByteBuffer.allocate(ACK_SIZE);
+    DatagramPacket packet = new DatagramPacket(dataBuffer.array(), ACK_SIZE);
+    socket.receive(packet);
+
+    long checksum = dataBuffer.getLong();
+    int sequenceNumber = dataBuffer.getInt();
+
+    crc.reset();
+    crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
+
+    return (checksum == crc.getValue());
   }
 
   public void sendPacket(int sequenceNumber, byte[] data, int length) throws Exception {
@@ -58,9 +73,12 @@ public class FileSender {
     //System.out.println(sequenceNumber + " " + (HEADER_SIZE + length));
     
     // send packet
-    DatagramPacket packet = new DatagramPacket(dataBuffer.array(), HEADER_SIZE + length, receiverAddress);
-    socket.send(packet);
 
+
+    do {
+      DatagramPacket packet = new DatagramPacket(dataBuffer.array(), HEADER_SIZE + length, receiverAddress);
+      socket.send(packet);
+    } while(!receiveACK());
   }
 
   private void sendFile(String sourceFile, String destinationFile) throws Exception {

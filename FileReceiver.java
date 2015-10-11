@@ -27,14 +27,16 @@ public class FileReceiver {
 
   private static final int POSITION_PORT_NUMBER = 0;
 
-  private final int BLOCK_SIZE              = 576;
-  private final int STRING_SIZE             = 256;
-  private final int SEQUENCE_SIZE           = 4;
-  private final int CHECKSUM_SIZE           = 8;
-  private final int HEADER_SIZE             = SEQUENCE_SIZE + CHECKSUM_SIZE;
-  private final int CONTENT_SIZE            = BLOCK_SIZE    - HEADER_SIZE;
+  private final int BLOCK_SIZE    = 576;
+  private final int STRING_SIZE   = 256;
+  private final int SEQUENCE_SIZE = 4;
+  private final int ACK_SIZE      = 12;
+  private final int CHECKSUM_SIZE = 8;
+  private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
+  private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
 
   DatagramSocket socket;
+  SocketAddress senderAddress;
   CRC32 crc;
 
   public FileReceiver(Integer portNumber) throws Exception {
@@ -45,7 +47,28 @@ public class FileReceiver {
   private int receivePacket(byte[] data) throws Exception {
     DatagramPacket packet = new DatagramPacket(data, BLOCK_SIZE);
     socket.receive(packet);
+    senderAddress = packet.getSocketAddress();
     return packet.getLength();
+  }
+
+  public void sendACK(int sequenceNumber) throws Exception {
+    ByteBuffer dataBuffer = ByteBuffer.allocate(ACK_SIZE);
+
+    // reserve for checksum
+    dataBuffer.putLong(0);
+
+    dataBuffer.putInt(sequenceNumber);
+
+    crc.reset();
+    crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
+
+    // add checksum
+    dataBuffer.rewind();
+    dataBuffer.putLong(crc.getValue());
+
+    // send packet
+    DatagramPacket packet = new DatagramPacket(dataBuffer.array(), ACK_SIZE, senderAddress);
+    socket.send(packet);
   }
 
   private void receiveFile() throws Exception {
@@ -69,10 +92,7 @@ public class FileReceiver {
       crc.reset();
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
 
-      if (checksum != crc.getValue()) {
-        throw new Exception("Packet corrupt");
-      }
-      else {
+      if (checksum == crc.getValue()) {
         int sequenceNumber = dataBuffer.getInt();
 
         if (sequenceNumber == 0) {
@@ -87,6 +107,8 @@ public class FileReceiver {
           // Write to output stream
           destinationStream.write(container, 0, packetLength - HEADER_SIZE);
         }
+
+        sendACK(sequenceNumber);
       }
     }
   }
