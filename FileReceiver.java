@@ -77,6 +77,7 @@ public class FileReceiver {
     byte[] data = new byte[BLOCK_SIZE];
     byte[] container = new byte[BLOCK_SIZE];
     ByteBuffer dataBuffer = ByteBuffer.wrap(data);
+    int expectedNumber = 0;
 
     while(true) {
       dataBuffer.clear();
@@ -91,24 +92,31 @@ public class FileReceiver {
       // compare checksum
       crc.reset();
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
-
       if (checksum == crc.getValue()) {
         int sequenceNumber = dataBuffer.getInt();
 
-        if (sequenceNumber == 0) {
-          dataBuffer.get(container, 0, STRING_SIZE);
-          // Create an output stream
-          String destinationFile = new String(container).trim();
-          destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
-          Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
-        }
-        else {
-          dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
-          // Write to output stream
-          destinationStream.write(container, 0, packetLength - HEADER_SIZE);
+        // if sequence number is expected
+        if (sequenceNumber == expectedNumber) {
+          expectedNumber++;
+          System.out.println(sequenceNumber);
+          if (sequenceNumber == 0) {
+            dataBuffer.get(container, 0, STRING_SIZE);
+            // Create an output stream
+            String destinationFile = new String(container).trim();
+            destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
+            Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
+          }
+          else {
+            dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
+            // Write to output stream
+            destinationStream.write(container, 0, packetLength - HEADER_SIZE);
+          }
         }
 
         sendACK(sequenceNumber);
+      }
+      else {
+        sendACK(-1);
       }
     }
   }

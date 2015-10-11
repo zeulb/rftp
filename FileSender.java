@@ -47,8 +47,8 @@ public class FileSender {
 
     crc.reset();
     crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
-
-    return (checksum == crc.getValue());
+    System.out.println(sequenceNumber);
+    return (checksum == crc.getValue() && sequenceNumber != -1);
   }
 
   public void sendPacket(int sequenceNumber, byte[] data, int length) throws Exception {
