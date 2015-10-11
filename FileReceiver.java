@@ -76,7 +76,7 @@ public class FileReceiver {
     dataBuffer.putLong(crc.getValue());
 
     // send packet
-    System.out.println("send ACK " + sequenceNumber);
+ //   System.out.println("send ACK " + sequenceNumber);
     DatagramPacket packet = new DatagramPacket(dataBuffer.array(), ACK_SIZE, senderAddress);
     socket.send(packet);
   }
@@ -104,7 +104,7 @@ public class FileReceiver {
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
       if (checksum == crc.getValue()) {
         int sequenceNumber = dataBuffer.getInt();
-        System.out.println("receive " + sequenceNumber);
+    //    System.out.println("receive " + sequenceNumber + " " + pendingNumber);
         int blockId = sequenceNumber%BUCKET_SIZE;
         sendACK(sequenceNumber);
         if (sequenceNumber < pendingNumber || filledTable[blockId]) continue;
@@ -112,13 +112,11 @@ public class FileReceiver {
         filledTable[blockId] = true;
         dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
         dataTable[blockId] = container.clone();
-        lengthTable[blockId] = packetLength - HEADER_SIZE;
-
-        
+        lengthTable[blockId] = packetLength - HEADER_SIZE;        
       }
 
       while (filledTable[pendingNumber%BUCKET_SIZE]) {
-        System.out.println("process " + pendingNumber);
+     //   System.out.println("process " + pendingNumber);
         if (pendingNumber == 0) {
           // Create an output stream
           String destinationFile = new String(dataTable[0]).trim();

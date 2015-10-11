@@ -54,7 +54,10 @@ public class FileSender {
   }
 
   private void markDone(int successNumber) throws Exception {
+    if (successNumber < pendingNumber) return;
+    //System.out.println("ack " + successNumber);
     ackTable[successNumber%BUCKET_SIZE] = false;
+   // System.out.println("unset " + successNumber + " " + (successNumber%BUCKET_SIZE));
     
     byte[] data = new byte[BLOCK_SIZE];
     while(pendingNumber%BUCKET_SIZE != sequenceNumber%BUCKET_SIZE && !sourceEmpty) {
@@ -67,6 +70,7 @@ public class FileSender {
     }
 
     while(ackTable[pendingNumber%BUCKET_SIZE] == false && pendingNumber < sequenceNumber) {
+     // System.out.println("oyes " + pendingNumber);
       pendingNumber++;
       
       if (sourceEmpty) continue;
@@ -138,7 +142,9 @@ public class FileSender {
     dataTable[blockId]   = dataBuffer.array().clone();
     lengthTable[blockId] = length;
     ackTable[blockId]    = true; 
+  //  System.out.println("set " + sequenceNumber + " " + blockId);
 
+  //  System.out.println("send " + sequenceNumber);
     sendBlock(blockId);
   }
 
@@ -157,6 +163,7 @@ public class FileSender {
 
       for(int i = pendingNumber; i < sequenceNumber; i++) {
         if (ackTable[i%BUCKET_SIZE]) {
+    //      System.out.println("send " + i);
           sendBlock(i%BUCKET_SIZE);
         }
       }
