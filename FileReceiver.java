@@ -16,7 +16,7 @@ class CloseStreamThread extends Thread {
   public void run() {
     try {
       os.close();
-      System.out.println("Successfully writen to file");
+      System.out.println("Successfully written to file");
     } catch (Exception e) {
       System.out.println("Failed to close output stream");
     }
@@ -27,14 +27,13 @@ public class FileReceiver {
 
   private static final int POSITION_PORT_NUMBER = 0;
 
-  private final int BLOCK_SIZE    = 576;
+  private final int BLOCK_SIZE    = 1000;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;
   private final int ACK_SIZE      = 12;
   private final int CHECKSUM_SIZE = 8;
   private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
-  private final int TIMEOUT = 100;
 
   DatagramSocket socket;
   SocketAddress senderAddress;
@@ -80,17 +79,10 @@ public class FileReceiver {
     byte[] container = new byte[BLOCK_SIZE];
     ByteBuffer dataBuffer = ByteBuffer.wrap(data);
     int expectedNumber = 0;
-    int previousACK = -1;
 
     while(true) {
       dataBuffer.clear();
-      int packetLength;
-      try {
-        packetLength = receivePacket(data);
-      } catch(Exception e) {
-        sendACK(previousACK);
-        continue;
-      }
+      int packetLength = receivePacket(data);
 
       if (packetLength < CHECKSUM_SIZE) {
         throw new Exception("Packet too short");
@@ -103,18 +95,16 @@ public class FileReceiver {
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
       if (checksum == crc.getValue()) {
         int sequenceNumber = dataBuffer.getInt();
-        System.out.println("receive " + sequenceNumber + " " + expectedNumber);
+        
         // if sequence number is expected
         if (sequenceNumber == expectedNumber) {
           expectedNumber++;
-          System.out.println(sequenceNumber);
           if (sequenceNumber == 0) {
             dataBuffer.get(container, 0, STRING_SIZE);
             // Create an output stream
             String destinationFile = new String(container).trim();
             destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
             Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
-            socket.setSoTimeout(TIMEOUT);
           }
           else {
             dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
@@ -124,11 +114,9 @@ public class FileReceiver {
         }
 
         sendACK(sequenceNumber);
-        previousACK = sequenceNumber;
       }
       else {
         sendACK(-1);
-        previousACK = -1;
       }
     }
   }
