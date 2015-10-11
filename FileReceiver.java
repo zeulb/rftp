@@ -27,6 +27,7 @@ public class FileReceiver {
 
   private static final int POSITION_PORT_NUMBER = 0;
 
+  private final int BUCKET_SIZE   = 50;
   private final int BLOCK_SIZE    = 1000;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;
@@ -37,11 +38,19 @@ public class FileReceiver {
 
   DatagramSocket socket;
   SocketAddress senderAddress;
+  private byte[][] dataTable;
+  private int[] lengthTable;
+  private boolean[] filledTable;
+  private int pendingNumber;
   CRC32 crc;
 
   public FileReceiver(Integer portNumber) throws Exception {
     crc = new CRC32();
     socket = new DatagramSocket(portNumber);
+    dataTable = new byte[BUCKET_SIZE][BLOCK_SIZE];
+    lengthTable = new int[BUCKET_SIZE];
+    filledTable = new boolean[BUCKET_SIZE];
+    pendingNumber = 0;
   }
 
   private int receivePacket(byte[] data) throws Exception {
@@ -85,7 +94,7 @@ public class FileReceiver {
       int packetLength = receivePacket(data);
 
       if (packetLength < CHECKSUM_SIZE) {
-        throw new Exception("Packet too short");
+        continue;
       }
 
       long checksum = dataBuffer.getLong();
@@ -95,28 +104,33 @@ public class FileReceiver {
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
       if (checksum == crc.getValue()) {
         int sequenceNumber = dataBuffer.getInt();
-        
-        // if sequence number is expected
-        if (sequenceNumber == expectedNumber) {
-          expectedNumber++;
-          if (sequenceNumber == 0) {
-            dataBuffer.get(container, 0, STRING_SIZE);
-            // Create an output stream
-            String destinationFile = new String(container).trim();
-            destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
-            Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
-          }
-          else {
-            dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
-            // Write to output stream
-            destinationStream.write(container, 0, packetLength - HEADER_SIZE);
-          }
-        }
-
+        System.out.println("receive " + sequenceNumber);
+        int blockId = sequenceNumber%BUCKET_SIZE;
         sendACK(sequenceNumber);
+        if (sequenceNumber < pendingNumber || filledTable[blockId]) continue;
+
+        filledTable[blockId] = true;
+        dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
+        dataTable[blockId] = container.clone();
+        lengthTable[blockId] = packetLength - HEADER_SIZE;
+
+        
       }
-      else {
-        sendACK(-1);
+
+      while (filledTable[pendingNumber%BUCKET_SIZE]) {
+        System.out.println("process " + pendingNumber);
+        if (pendingNumber == 0) {
+          // Create an output stream
+          String destinationFile = new String(dataTable[0]).trim();
+          destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
+          Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
+        }
+        else {
+          // Write to output stream
+          destinationStream.write(dataTable[pendingNumber%BUCKET_SIZE], 0, lengthTable[pendingNumber%BUCKET_SIZE]);
+        }
+        filledTable[pendingNumber%BUCKET_SIZE] = false;
+        pendingNumber++;
       }
     }
   }

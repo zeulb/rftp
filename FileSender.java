@@ -11,6 +11,7 @@ public class FileSender {
   private static final int POSITION_SOURCE_FILE_LOCATION = 2;
   private static final int POSITION_DESTINATION_FILE_LOCATION = 3;
 
+  private final int BUCKET_SIZE   = 50;
   private final int BLOCK_SIZE    = 1000;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;
@@ -21,14 +22,27 @@ public class FileSender {
   private final int TIMEOUT = 20;
 
   InetSocketAddress receiverAddress;
+  InputStream sourceStream;
   CRC32 crc;
   DatagramSocket socket;
+  int sequenceNumber;
+  int pendingNumber;
+  private boolean[] ackTable;
+  private byte[][] dataTable;
+  private int[] lengthTable;
+  boolean sourceEmpty = false;
 
-  public FileSender(String hostName, Integer portNumber) throws Exception {
+  public FileSender(String hostName, Integer portNumber, String sourceFile) throws Exception {
     receiverAddress = new InetSocketAddress(hostName, portNumber);
+    sourceStream = new BufferedInputStream(new FileInputStream(sourceFile));
     crc = new CRC32();
     socket = new DatagramSocket();
     socket.setSoTimeout(TIMEOUT);
+    ackTable = new boolean[BUCKET_SIZE];
+    dataTable = new byte[BUCKET_SIZE][BLOCK_SIZE];
+    lengthTable = new int[BUCKET_SIZE];
+    sequenceNumber = pendingNumber = 0;
+    sourceEmpty = false;
   }
 
   public String getNormalizedString(String fileName) {
@@ -39,25 +53,66 @@ public class FileSender {
     return sb.toString();
   }
 
-  private int receiveACK() throws Exception {
+  private void markDone(int successNumber) throws Exception {
+    ackTable[successNumber%BUCKET_SIZE] = false;
+    
+    byte[] data = new byte[BLOCK_SIZE];
+    while(pendingNumber%BUCKET_SIZE != sequenceNumber%BUCKET_SIZE && !sourceEmpty) {
+      int length = sourceStream.read(data, 0, CONTENT_SIZE);
+      if (length == -1) {
+        sourceEmpty = true;
+        break;
+      }
+      sendPacket(sequenceNumber++, data, length);
+    }
+
+    while(ackTable[pendingNumber%BUCKET_SIZE] == false && pendingNumber < sequenceNumber) {
+      pendingNumber++;
+      
+      if (sourceEmpty) continue;
+
+      int length = sourceStream.read(data, 0, CONTENT_SIZE);
+      if (length == -1) {
+        sourceEmpty = true;
+        continue;
+      }
+      sendPacket(sequenceNumber++, data, length);
+    }
+
+
+  }
+
+  private boolean receiveACK() throws Exception {
+    //System.out.println("called " + pendingNumber + " " + sequenceNumber);
     ByteBuffer dataBuffer = ByteBuffer.allocate(ACK_SIZE);
     DatagramPacket packet = new DatagramPacket(dataBuffer.array(), ACK_SIZE);
     try {
       socket.receive(packet);
     } catch (Exception e) {
-      return -1;
+      return false;
     }
     long checksum = dataBuffer.getLong();
     int sequenceNumber = dataBuffer.getInt();
 
     crc.reset();
     crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
-    if (checksum == crc.getValue())
-      System.out.println("ACK " + sequenceNumber);
-    return (checksum == crc.getValue() ? sequenceNumber : -1);
+
+    if (checksum == crc.getValue()) {
+      markDone(sequenceNumber);
+      return true;
+    }
+    return false;
+  }
+
+  public void sendBlock(int blockId) throws Exception {
+    int length = lengthTable[blockId];
+    DatagramPacket packet = new DatagramPacket(dataTable[blockId], HEADER_SIZE + length, receiverAddress);
+    socket.send(packet);
   }
 
   public void sendPacket(int sequenceNumber, byte[] data, int length) throws Exception {
+    //System.out.println("Packet " + sequenceNumber + " " + length);
+
     ByteBuffer dataBuffer = ByteBuffer.allocate(HEADER_SIZE + length);
 
     // reserve for checksum
@@ -78,32 +133,34 @@ public class FileSender {
 
     //System.out.println(sequenceNumber + " " + (HEADER_SIZE + length));
     
-    // send packet
+    // save packet
+    int blockId = sequenceNumber%BUCKET_SIZE;
+    dataTable[blockId]   = dataBuffer.array().clone();
+    lengthTable[blockId] = length;
+    ackTable[blockId]    = true; 
 
-
-    do {
-      System.out.println("send " + sequenceNumber);
-      DatagramPacket packet = new DatagramPacket(dataBuffer.array(), HEADER_SIZE + length, receiverAddress);
-      socket.send(packet);
-    } while(receiveACK() != sequenceNumber);
+    sendBlock(blockId);
   }
 
-  private void sendFile(String sourceFile, String destinationFile) throws Exception {
-
-    InputStream sourceStream = new BufferedInputStream(new FileInputStream(sourceFile));
-
-    byte[] data = new byte[BLOCK_SIZE];
-    ByteBuffer b = ByteBuffer.wrap(data);
-
-    int sequenceNumber = 0;
-
+  private void sendFile(String destinationFile) throws Exception {
     // send string name packet
     sendPacket(sequenceNumber++, getNormalizedString(destinationFile).getBytes(), 256);
 
-    // send packet
-    int length;
-    while((length = sourceStream.read(data, 0, CONTENT_SIZE)) > 0) {
-      sendPacket(sequenceNumber++, data, length);
+    int countFail = 0;
+    while(pendingNumber < sequenceNumber) {
+      if (receiveACK()) {
+        countFail = 0;
+        continue;
+      }
+
+      countFail++;
+
+      for(int i = pendingNumber; i < sequenceNumber; i++) {
+        if (ackTable[i%BUCKET_SIZE]) {
+          sendBlock(i%BUCKET_SIZE);
+        }
+      }
+      countFail = 0;
     }
   }
 
@@ -120,8 +177,8 @@ public class FileSender {
     String sourceFileLocation      = args[POSITION_SOURCE_FILE_LOCATION];
     String destinationFileLocation = args[POSITION_DESTINATION_FILE_LOCATION];
 
-    FileSender fileSender = new FileSender(hostName, portNumber);
-    fileSender.sendFile(sourceFileLocation, destinationFileLocation);
+    FileSender fileSender = new FileSender(hostName, portNumber, sourceFileLocation);
+    fileSender.sendFile(destinationFileLocation);
 
   }
 }
