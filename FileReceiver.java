@@ -4,13 +4,32 @@ import java.nio.*;
 import java.util.zip.*;
 import java.io.*;
 
+class CloseStreamThread extends Thread {
+  private OutputStream os = null;
+  
+  public CloseStreamThread(OutputStream os) {
+    super();
+    this.os = os;
+  }
+  
+  @Override
+  public void run() {
+    try {
+      os.close();
+      System.out.println("Successfully writen to file");
+    } catch (Exception e) {
+      System.out.println("Failed to close output stream");
+    }
+  }
+}
+
 public class FileReceiver {
 
   private static final int POSITION_PORT_NUMBER = 0;
 
   private final int BLOCK_SIZE              = 576;
   private final int STRING_SIZE             = 256;
-  private final int SEQUENCE_SIZE           = 8;
+  private final int SEQUENCE_SIZE           = 4;
   private final int CHECKSUM_SIZE           = 8;
   private final int HEADER_SIZE             = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE            = BLOCK_SIZE    - HEADER_SIZE;
@@ -54,18 +73,18 @@ public class FileReceiver {
         throw new Exception("Packet corrupt");
       }
       else {
-        long sequenceNumber = dataBuffer.getLong();
+        int sequenceNumber = dataBuffer.getInt();
 
         if (sequenceNumber == 0) {
           dataBuffer.get(container, 0, STRING_SIZE);
-
           // Create an output stream
           String destinationFile = new String(container).trim();
           destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
+          Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
         }
         else {
           dataBuffer.get(container, 0, packetLength - HEADER_SIZE);
-
+          // Write to output stream
           destinationStream.write(container, 0, packetLength - HEADER_SIZE);
         }
       }

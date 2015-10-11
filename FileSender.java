@@ -13,7 +13,7 @@ public class FileSender {
 
   private final int BLOCK_SIZE              = 576;
   private final int STRING_SIZE             = 256;
-  private final int SEQUENCE_SIZE           = 8;
+  private final int SEQUENCE_SIZE           = 4;
   private final int CHECKSUM_SIZE           = 8;
   private final int HEADER_SIZE             = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE            = BLOCK_SIZE    - HEADER_SIZE;
@@ -36,14 +36,14 @@ public class FileSender {
     return sb.toString();
   }
 
-  public void sendPacket(long sequenceNumber, byte[] data, int length) throws Exception {
+  public void sendPacket(int sequenceNumber, byte[] data, int length) throws Exception {
     ByteBuffer dataBuffer = ByteBuffer.allocate(HEADER_SIZE + length);
 
     // reserve for checksum
     dataBuffer.putLong(0);
 
     // add sequence number
-    dataBuffer.putLong(sequenceNumber);
+    dataBuffer.putInt(sequenceNumber);
 
     // add content
     dataBuffer.put(data, 0, length);
@@ -55,6 +55,8 @@ public class FileSender {
     dataBuffer.rewind();
     dataBuffer.putLong(crc.getValue());
 
+    //System.out.println(sequenceNumber + " " + (HEADER_SIZE + length));
+    
     // send packet
     DatagramPacket packet = new DatagramPacket(dataBuffer.array(), HEADER_SIZE + length, receiverAddress);
     socket.send(packet);
@@ -68,8 +70,9 @@ public class FileSender {
     byte[] data = new byte[BLOCK_SIZE];
     ByteBuffer b = ByteBuffer.wrap(data);
 
-    long sequenceNumber = 0;
+    int sequenceNumber = 0;
 
+    // send string name packet
     sendPacket(sequenceNumber++, getNormalizedString(destinationFile).getBytes(), 256);
 
     // send packet
