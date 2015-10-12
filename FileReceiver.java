@@ -27,14 +27,15 @@ public class FileReceiver {
 
   private static final int POSITION_PORT_NUMBER = 0;
 
-  private final int BUCKET_SIZE   = 60;
+  private final int BUCKET_SIZE   = 90;
   private final int BLOCK_SIZE    = 1000;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;
-  private final int ACK_SIZE      = 12;
+  private final int ACK_SIZE      = 13;
   private final int CHECKSUM_SIZE = 8;
   private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
+  private final int TIMEOUT = 6;
 
   DatagramSocket socket;
   SocketAddress senderAddress;
@@ -60,13 +61,14 @@ public class FileReceiver {
     return packet.getLength();
   }
 
-  public void sendACK(int sequenceNumber) throws Exception {
+  public void sendACK(int sequenceNumber, int value) throws Exception {
     ByteBuffer dataBuffer = ByteBuffer.allocate(ACK_SIZE);
 
     // reserve for checksum
     dataBuffer.putLong(0);
 
     dataBuffer.putInt(sequenceNumber);
+    dataBuffer.put((byte)value);
 
     crc.reset();
     crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
@@ -91,22 +93,27 @@ public class FileReceiver {
 
     while(true) {
       dataBuffer.clear();
-      int packetLength = receivePacket(data);
+      int packetLength;
+      try {
+        packetLength = receivePacket(data);
+      } catch(Exception e) {
+        sendACK(pendingNumber, 0);
+        continue;
+      }
 
       if (packetLength < CHECKSUM_SIZE) {
         continue;
       }
 
       long checksum = dataBuffer.getLong();
-
+      int sequenceNumber = dataBuffer.getInt();
       // compare checksum
       crc.reset();
       crc.update(data, CHECKSUM_SIZE, packetLength - CHECKSUM_SIZE);
       if (checksum == crc.getValue()) {
-        int sequenceNumber = dataBuffer.getInt();
     //    System.out.println("receive " + sequenceNumber + " " + pendingNumber);
         int blockId = sequenceNumber%BUCKET_SIZE;
-        sendACK(sequenceNumber);
+        sendACK(sequenceNumber, 1);
         if (sequenceNumber < pendingNumber || filledTable[blockId]) continue;
 
         filledTable[blockId] = true;
@@ -122,6 +129,7 @@ public class FileReceiver {
           String destinationFile = new String(dataTable[0]).trim();
           destinationStream = new BufferedOutputStream(new FileOutputStream(destinationFile));
           Runtime.getRuntime().addShutdownHook(new CloseStreamThread(destinationStream));
+          socket.setSoTimeout(TIMEOUT);
         }
         else {
           // Write to output stream
@@ -130,6 +138,7 @@ public class FileReceiver {
         filledTable[pendingNumber%BUCKET_SIZE] = false;
         pendingNumber++;
       }
+      
     }
   }
 

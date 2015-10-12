@@ -11,15 +11,16 @@ public class FileSender {
   private static final int POSITION_SOURCE_FILE_LOCATION = 2;
   private static final int POSITION_DESTINATION_FILE_LOCATION = 3;
 
-  private final int BUCKET_SIZE   = 60;
+  private final int BUCKET_SIZE   = 90;
   private final int BLOCK_SIZE    = 1000;
+  private final int MAX_SEND      = 6;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;
-  private final int ACK_SIZE      = 12;
+  private final int ACK_SIZE      = 13;
   private final int CHECKSUM_SIZE = 8;
   private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
-  private final int TIMEOUT = 2;
+  private final int TIMEOUT = 1;
 
   InetSocketAddress receiverAddress;
   InputStream sourceStream;
@@ -96,14 +97,22 @@ public class FileSender {
       return false;
     }
     long checksum = dataBuffer.getLong();
-    int sequenceNumber = dataBuffer.getInt();
 
     crc.reset();
     crc.update(dataBuffer.array(), CHECKSUM_SIZE, ACK_SIZE - CHECKSUM_SIZE);
 
     if (checksum == crc.getValue()) {
-      markDone(sequenceNumber);
-      return true;
+      int packetNumber = dataBuffer.getInt();
+      byte value = dataBuffer.get();
+      if (value == (byte)0) {
+        if (sequenceNumber > packetNumber && packetNumber >= pendingNumber) {
+          sendBlock(packetNumber%BUCKET_SIZE);
+        }
+      }
+      else {
+        markDone(packetNumber);
+      }
+      return true; 
     }
     return false;
   }
@@ -160,11 +169,14 @@ public class FileSender {
       }
 
       countFail++;
+      int send = 0;
       for(int i = pendingNumber; i < sequenceNumber; i++) {
         if (ackTable[i%BUCKET_SIZE]) {
     //      System.out.println("send " + i);
+          send++;
           sendBlock(i%BUCKET_SIZE);
         }
+        if (send == MAX_SEND) break;
       }
       countFail = 0;
     }
