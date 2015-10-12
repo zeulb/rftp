@@ -27,7 +27,7 @@ public class FileReceiver {
 
   private static final int POSITION_PORT_NUMBER = 0;
 
-  private final int BUCKET_SIZE   = 50;
+  private final int BUCKET_SIZE   = 60;
   private final int BLOCK_SIZE    = 1000;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;

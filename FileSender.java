@@ -11,7 +11,7 @@ public class FileSender {
   private static final int POSITION_SOURCE_FILE_LOCATION = 2;
   private static final int POSITION_DESTINATION_FILE_LOCATION = 3;
 
-  private final int BUCKET_SIZE   = 50;
+  private final int BUCKET_SIZE   = 60;
   private final int BLOCK_SIZE    = 1000;
   private final int STRING_SIZE   = 256;
   private final int SEQUENCE_SIZE = 4;
@@ -19,7 +19,7 @@ public class FileSender {
   private final int CHECKSUM_SIZE = 8;
   private final int HEADER_SIZE   = SEQUENCE_SIZE + CHECKSUM_SIZE;
   private final int CONTENT_SIZE  = BLOCK_SIZE    - HEADER_SIZE;
-  private final int TIMEOUT = 20;
+  private final int TIMEOUT = 2;
 
   InetSocketAddress receiverAddress;
   InputStream sourceStream;
@@ -160,7 +160,6 @@ public class FileSender {
       }
 
       countFail++;
-
       for(int i = pendingNumber; i < sequenceNumber; i++) {
         if (ackTable[i%BUCKET_SIZE]) {
     //      System.out.println("send " + i);
